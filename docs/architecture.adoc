@@ -69,8 +69,19 @@ L2), so a VM-hosted probe would miss the very traffic being accounted.
 == C4 · Level 2 — Containers
 
 The pipeline is split across *two NixOS Incus instances*, both attached to ndh's
-`bare-br` segment.  `nnh-inlet` is a thin, stateless ingest edge; `nnh-outlet` is
-the stateful backend (the "brain").  They address each other *by name* over bare-br.
+`bare-br` segment, along a *failure-domain* line rather than by workload weight:
+
+* *`nnh-inlet` — the self-contained ingest edge* — runs the orchestrator + inlet
+  *and* Kafka.  Co-locating all three means it can receive the probe's NetFlow,
+  buffer to a *local* Kafka, and serve config to every daemon *without* the store
+  node.  An `nnh-outlet` outage therefore loses *no* flows: the inlet keeps
+  buffering and the outlet drains the backlog when it returns.
+* *`nnh-outlet` — the store* — runs the outlet + console and the one irreplaceable
+  backend, *ClickHouse* (the flow history), plus Redis and the GeoIP fetch.
+  Everything on the inlet is reconstructible (config is baked in Nix, Kafka is a
+  ≤1-day buffer); ClickHouse is not — so it, and only it, gets the persistent volumes.
+
+They address each other *by name* over bare-br.
 
 [mermaid]
 ....
@@ -79,15 +90,15 @@ flowchart LR
     PMACCT["pmacctd (nnh-probe)\nnfprobe, sampling_rate=1\nen0, no-direction map"]:::wl
   end
 
-  subgraph inlet [nnh-inlet.nikopol — ingest edge]
+  subgraph inlet [nnh-inlet.nikopol — ingest edge + brain]
+    ORCH["akvorado orchestrator\n:8080, serves config"]:::wl
     IN["akvorado inlet\nUDP :2055"]:::wl
+    KAFKA[("Kafka (KRaft)\ntopic: flows (≤1-day buffer)")]:::infra
   end
 
-  subgraph outlet [nnh-outlet.nikopol — store/backend]
-    ORCH["akvorado orchestrator\n:8080, serves config"]:::wl
+  subgraph outlet [nnh-outlet.nikopol — store]
     OUT["akvorado outlet\nenrich + write"]:::wl
     CON["akvorado console\n:80 (UI)"]:::wl
-    KAFKA[("Kafka (KRaft)\ntopic: flows")]:::infra
     CH[("ClickHouse\nflow history")]:::infra
     REDIS[("Redis\nconsole cache")]:::infra
   end
@@ -96,13 +107,13 @@ flowchart LR
 
   PMACCT -->|"NetFlow v9 → nnh-inlet.nikopol:2055"| IN
   IN -->|"produce raw flows"| KAFKA
-  KAFKA -->|"consume"| OUT
+  KAFKA -->|"consume (remote)"| OUT
   OUT -->|"enriched rows"| CH
   CON -->|"query"| CH
   CON -->|"cache"| REDIS
-  ORCH -.->|"serves pipeline config (HTTP)"| IN
-  ORCH -.->|"serves config + provisions schemas"| OUT
-  ORCH -.->|"provisions topic"| KAFKA
+  ORCH -.->|"serves config (local)"| IN
+  ORCH -.->|"serves config + provisions schema (remote → nnh-outlet:9000)"| OUT
+  ORCH -.->|"provisions topic (local)"| KAFKA
   OPB -->|"http://nnh-outlet.nikopol"| CON
 
   classDef wl fill:#bbf7d0,stroke:#166534,color:#000;
@@ -115,17 +126,20 @@ flowchart LR
 | Container | Role
 
 | *pmacctd (nnh-probe)* | libpcap capture of `en0`, unsampled; exports NetFlow v9 to the inlet BY NAME.  Root LaunchDaemon on the vz Mac (outside the darwin fleet), rendered at deploy time.
-| *akvorado inlet* | receives NetFlow on `:2055`, produces raw flows to Kafka.  Fetches its ENTIRE config from the orchestrator — a stateless forwarder.
-| *akvorado orchestrator* | holds the whole pipeline config (one `akvorado.yaml`), serves it to every daemon; provisions the Kafka topic + ClickHouse schemas.
-| *akvorado outlet* | consumes Kafka, enriches (attribution + GeoIP) and writes rows to ClickHouse.
-| *akvorado console* | the Visualize UI, on `:80`; reads ClickHouse, caches in Redis.
-| *Kafka / ClickHouse / Redis* | reused nixpkgs backends; native systemd, *no Docker/podman* (the netavark UDP hostport DNAT was unreliable — see CLAUDE.md).
+| *akvorado orchestrator* (nnh-inlet) | holds the whole pipeline config (one `akvorado.yaml`), serves it to every daemon; provisions the Kafka topic (local) + ClickHouse schema (remote → nnh-outlet).
+| *akvorado inlet* (nnh-inlet) | receives NetFlow on `:2055`, produces raw flows to the local Kafka.  Fetches its config from the local orchestrator.
+| *Kafka* (nnh-inlet) | the transient flow buffer (KRaft, ≤1-day retention); ephemeral by design — sits on the inlet so ingest survives a store outage.
+| *akvorado outlet* (nnh-outlet) | consumes Kafka (remote), enriches (attribution + GeoIP) and writes rows to ClickHouse (local).
+| *akvorado console* (nnh-outlet) | the Visualize UI, on `:80`; reads ClickHouse, caches in Redis (both local).
+| *ClickHouse / Redis* (nnh-outlet) | reused nixpkgs backends; native systemd, *no Docker/podman* (the netavark UDP hostport DNAT was unreliable — see CLAUDE.md).  ClickHouse binds bare-br (`listen_host=0.0.0.0`) so the remote orchestrator can provision it.
 |===
 
 NOTE: All the pipeline configuration (the `:2055` listener, the Kafka target, the
-sampling rate, the attribution networks, …) lives in the *orchestrator's* config on
-`nnh-outlet`.  `nnh-inlet` carries none — it just runs `akvorado inlet
-http://nnh-outlet.nikopol:8080` and fetches everything.
+sampling rate, the attribution networks, the console `:80`, …) lives in the
+*orchestrator's* config on `nnh-inlet`.  `nnh-outlet` carries none — the outlet and
+console just run `akvorado {outlet,console} http://nnh-inlet.nikopol:8080` and fetch
+everything.  The split is a *failure domain*, not a config boundary: the ingest edge
+holds the config authority so it needs nothing from the store to run.
 
 == Flow — the journey of one flow
 

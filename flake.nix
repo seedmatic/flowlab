@@ -108,11 +108,15 @@
       ndhSegments = ndh.catalog.netplan.segments;
       ndhAsns = ndh.catalog.netplan.asns;
 
-      # The pipeline is split across TWO Incus instances, both on bare-br:
-      #   nnh-inlet  — ingest edge (inlet only, thin forwarder)
-      #   nnh-outlet — store/backend (orchestrator+outlet+console + Kafka/CH/Redis)
-      # Same specialArgs to both: the inlet ignores the ndh* attrs (its module has a
-      # `...` catch-all), so passing them uniformly keeps the wiring simple.
+      # The pipeline is split across TWO Incus instances, both on bare-br, along a
+      # failure-domain line:
+      #   nnh-inlet  — ingest edge + brain (orchestrator + inlet + Kafka)
+      #   nnh-outlet — store (outlet + console + ClickHouse/Redis + GeoIP)
+      # Co-locating orchestrator+Kafka with the inlet makes ingest self-contained: it
+      # buffers to a local Kafka and serves its own config, so a store outage loses no
+      # flows. Both hosts take the same specialArgs — the inlet's attribution `let`
+      # consumes the ndh* attrs (it now holds the `settings`); passing them uniformly
+      # keeps the wiring simple (outlet's module ignores the extras via its `...`).
       mkCollectorSystem =
         hostFile:
         lib.nixosSystem {
@@ -193,10 +197,11 @@
           // extraDevices;
         };
 
-      # nnh-inlet: no persistent volumes — a thin, stateless NetFlow→Kafka forwarder;
-      # nothing needs to survive a rebuild.
+      # nnh-inlet: no persistent volumes despite running orchestrator + inlet + Kafka —
+      # all of it is reconstructible (orchestrator config is baked in nix, Kafka is a
+      # ≤1-day buffer that's ephemeral BY DESIGN). Nothing here needs to survive a rebuild.
       inletProfileYaml = mkProfile {
-        description = "flowlab nnh-inlet (ingest edge)";
+        description = "flowlab nnh-inlet (ingest edge + brain)";
         extraDevices = { };
       };
 
@@ -207,7 +212,7 @@
       # /var/lib/akvorado sat on the ephemeral rootfs and every rebuild re-fetched
       # GeoIP from scratch, hammering the free tier into HTTP 429.
       outletProfileYaml = mkProfile {
-        description = "flowlab nnh-outlet (store/backend)";
+        description = "flowlab nnh-outlet (store)";
         extraDevices = {
           data = {
             type = "disk";

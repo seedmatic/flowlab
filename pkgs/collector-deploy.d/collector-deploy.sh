@@ -2,8 +2,8 @@
 # project on the nikopol-nixos remote, both attached to nikopol's `bare-br`
 # segment (DHCP + a .nikopol dnsmasq name, the /24 advertised into the tailnet):
 #
-#   nnh-inlet  — ingest edge  (akvorado inlet only; receives the probe's NetFlow)
-#   nnh-outlet — store/backend (orchestrator+outlet+console + Kafka/ClickHouse/Redis)
+#   nnh-inlet  — ingest edge + brain (orchestrator + inlet + Kafka; the probe's target)
+#   nnh-outlet — store             (outlet + console + ClickHouse/Redis + GeoIP)
 #
 # Rendered by pkgs.replaceVars from flake.nix (tokens @inletMetadata@/@inletSquashfs@/
 # @inletProfile@ + @outletMetadata@/@outletSquashfs@/@outletProfile@ = the two
@@ -98,16 +98,17 @@ deploy_instance() {
   fi
 }
 
-# Store node first (it runs the orchestrator the inlet fetches its config from),
-# then the ingest edge. Instance NAMES are unprefixed (we're already in the `nnh`
-# project); the .nikopol DNS names stay nnh-inlet/nnh-outlet because bare-br is
-# dns.mode=dynamic — the record follows the guest's DHCP hostname (networking.
-# hostName = nnh-*), NOT the instance name.
+# Ingest edge first: it runs the orchestrator that the store node's outlet+console
+# fetch their config from (plus Kafka + the :2055 listener), so bringing it up first
+# lets the store node settle on its first try instead of retry-looping. Instance
+# NAMES are unprefixed (we're already in the `nnh` project); the .nikopol DNS names
+# stay nnh-inlet/nnh-outlet because bare-br is dns.mode=dynamic — the record follows
+# the guest's DHCP hostname (networking.hostName = nnh-*), NOT the instance name.
 # ⚠️ REQUIRES bare-br dns.mode=dynamic (ndh-owned). Under the default `managed`
 # mode the record would follow the instance name (inlet.nikopol/outlet.nikopol),
 # breaking the by-name wiring (orchestratorUrl, kafka advertised, probe target).
-deploy_instance outlet outlet "$outlet_metatar" "$outlet_rootfs" outlet
 deploy_instance inlet inlet "$inlet_metatar" "$inlet_rootfs" inlet
+deploy_instance outlet outlet "$outlet_metatar" "$outlet_rootfs" outlet
 
 # Deploy the UPSTREAM probe on vz, pointed at the inlet BY NAME. Ordered AFTER the
 # launch on purpose: the inlet must be listening on :2055 (after it has fetched its

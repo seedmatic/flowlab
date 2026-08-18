@@ -32,13 +32,18 @@ let
   # inherited from the segment — most-specific-wins is per-attribute). Sourced from
   # BOTH ndh's flat lan inventory (daily-drivers + rke2 nodes) and any off-DHCP
   # hosts pinned inside the segments. Distinct /32 keys, so akvorado sees them all.
+  # A host's `ip` may be null — nnh publishes its OWN nnh-inlet/nnh-outlet into ndh's
+  # catalog as DHCP tenants (no static IP to reserve), so ndh echoes them back here
+  # with ip=null. Skip those: there is no /32 to attribute (the enclosing segment's
+  # name already covers them), and `"${null}/32"` would abort eval.
+  hasIp = h: (h.ip or null) != null;
   hostNetworks =
     (lib.mapAttrs' (name: h: lib.nameValuePair "${h.ip}/32" { inherit name; }) (
-      lib.filterAttrs (_: h: h ? ip) ndhHosts
+      lib.filterAttrs (_: hasIp) ndhHosts
     ))
     // (lib.listToAttrs (
       lib.concatMap (
-        s: map (h: lib.nameValuePair "${h.ip}/32" { name = h.name; }) (s.hosts or [ ])
+        s: map (h: lib.nameValuePair "${h.ip}/32" { name = h.name; }) (lib.filter hasIp (s.hosts or [ ]))
       ) ndhSegments
     ));
 

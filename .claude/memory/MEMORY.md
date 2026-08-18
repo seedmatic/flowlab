@@ -7,11 +7,17 @@ enricher gates, macOS pcap direction, ASN/GeoIP enrichment).
 
 ## Active
 
-- **Bootstrap** — repo created (`seedmatic/flowlab`), external-worktree layout, claude-hub
-  subtree at `.claude/hub`. Next: `modules/akvorado.nix` (services.akvorado, 4 systemd units,
-  inlet host-bound :2055), migrate the `netflow-probe` bundle from `ndh`, Incus NixOS image.
-- **Collector LIVE** — the appliance is deployed & working on nikopol-nixos (project `flowlab`,
-  `nix run .#collector-deploy`): probe→inlet:2055→Kafka→outlet→ClickHouse→console, ASN-enriched.
+- **Collector LIVE — two-instance failure-domain split (deployed 2026-08-18)** — the appliance
+  runs on nikopol-nixos in the **`nnh`** Incus project (`nix run "path:$PWD#collector-deploy"`),
+  as TWO instances named `inlet`/`outlet` (bare-br `.nikopol` names `nnh-inlet`/`nnh-outlet` via
+  dns.mode=dynamic). Split by failure domain, not workload weight: **`inlet` = orchestrator +
+  akvorado-inlet + Kafka** (self-contained ingest edge — buffers to a local Kafka + serves its own
+  config, so a store outage loses no flows); **`outlet` = akvorado-outlet + console + ClickHouse +
+  Redis + GeoIP** (the only irreplaceable state → the sole node with persistent volumes). Arbitration:
+  ClickHouse = the key store (reconstruct-from); Kafka = ≤1-day buffer, ephemeral on the edge.
+  Cross-instance by NAME: kafka `nnh-inlet.nikopol:9092`, CH `nnh-outlet.nikopol:9000` (CH
+  `listen_host=0.0.0.0` so the remote orchestrator provisions it), orchestrator `nnh-inlet.nikopol:8080`.
+  **Full topology + rationale + all C4 diagrams live in `docs/architecture.adoc`** (the source of truth).
 - **pcap completeness — FIXED + VALIDATED** — the probe was INBOUND-ONLY (uploads lost); fixed
   2026-08-15 via a single no-direction `interfaces.map` + the akvorado enricher ifindex-0 patch
   (`pkgs/akvorado-enricher-ifindex0.patch`, wired via `overrideAttrs`). Proven: OUTBOUND flow now

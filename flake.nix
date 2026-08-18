@@ -262,9 +262,12 @@
       };
     in
     {
+      # Output attrs are SHORT — we're already in nnh, so the namespace is implicit
+      # (`nix run .#probe-deploy`). Only the PATH binary keeps the nnh- prefix
+      # (writeShellApplication name above) — there `probe-deploy` alone is too generic.
       packages.${probeSystem} = {
-        nnh-probe = probe;
-        nnh-probe-deploy = probeDeploy;
+        probe = probe;
+        probe-deploy = probeDeploy;
         collector-deploy = collectorDeploy;
       };
 
@@ -278,7 +281,7 @@
       # One attrset per dynamic system key: Nix can't merge two separate
       # `apps.${probeSystem}.<x>` bindings (dynamic attributes don't combine).
       apps.${probeSystem} = {
-        nnh-probe-deploy = {
+        probe-deploy = {
           type = "app";
           program = "${probeDeploy}/bin/nnh-probe-deploy";
           meta.description = "Push the nnh-probe closure to the vz Mac + load its root LaunchDaemon (pmacctd → nnh-inlet.nikopol:2055) — docs: https://github.com/seedmatic/nnh/blob/main/docs/architecture.adoc";

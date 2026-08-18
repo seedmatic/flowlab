@@ -55,15 +55,23 @@ let
 
   siteNetworks = segmentNetworks // hostNetworks;
 
-  # "Internet only": keep any flow with at least one PUBLIC endpoint (excludes
-  # LAN-internal chatter). Address-based, network-agnostic — the same RFC1918 +
-  # bogon + multicast exclusions hold on the home LAN and the hotspot. Reused by
-  # BOTH the saved filter and the default Visualize filter below. NOT catalog-
-  # derived: this is public-vs-private, a different concern from attribution.
-  internetOnlyFilter = ''
-    (SrcAddr !<< 10.0.0.0/8 AND SrcAddr !<< 172.16.0.0/12 AND SrcAddr !<< 192.168.0.0/16 AND SrcAddr !<< 169.254.0.0/16 AND SrcAddr !<< fe80::/10 AND SrcAddr !<< fc00::/7 AND SrcAddr !<< ff00::/8 AND SrcAddr !<< 224.0.0.0/4)
-    OR
-    (DstAddr !<< 10.0.0.0/8 AND DstAddr !<< 172.16.0.0/12 AND DstAddr !<< 192.168.0.0/16 AND DstAddr !<< 169.254.0.0/16 AND DstAddr !<< fe80::/10 AND DstAddr !<< fc00::/7 AND DstAddr !<< ff00::/8 AND DstAddr !<< 224.0.0.0/4)'';
+  # Public-vs-private endpoint tests, ADDRESS-based → network-agnostic: the same
+  # RFC1918 + link-local + ULA + bogon/multicast exclusions hold on the home LAN AND
+  # on the hotspot (where every IP changes, so an AS-based test would break — the Mac
+  # gets the carrier's real AS, not our private 65000). These compose into the
+  # "internet only" filter AND the direction-oriented filters below: our single
+  # no-direction exporter gives akvorado no usable InIf/OutIf boundary to orient by,
+  # so "up vs down" can only be decided by which endpoint is private.
+  srcPublic = "(SrcAddr !<< 10.0.0.0/8 AND SrcAddr !<< 172.16.0.0/12 AND SrcAddr !<< 192.168.0.0/16 AND SrcAddr !<< 169.254.0.0/16 AND SrcAddr !<< fe80::/10 AND SrcAddr !<< fc00::/7 AND SrcAddr !<< ff00::/8 AND SrcAddr !<< 224.0.0.0/4)";
+  dstPublic = "(DstAddr !<< 10.0.0.0/8 AND DstAddr !<< 172.16.0.0/12 AND DstAddr !<< 192.168.0.0/16 AND DstAddr !<< 169.254.0.0/16 AND DstAddr !<< fe80::/10 AND DstAddr !<< fc00::/7 AND DstAddr !<< ff00::/8 AND DstAddr !<< 224.0.0.0/4)";
+  srcPrivate = "(SrcAddr << 10.0.0.0/8 OR SrcAddr << 172.16.0.0/12 OR SrcAddr << 192.168.0.0/16 OR SrcAddr << 169.254.0.0/16 OR SrcAddr << fe80::/10 OR SrcAddr << fc00::/7)";
+  dstPrivate = "(DstAddr << 10.0.0.0/8 OR DstAddr << 172.16.0.0/12 OR DstAddr << 192.168.0.0/16 OR DstAddr << 169.254.0.0/16 OR DstAddr << fe80::/10 OR DstAddr << fc00::/7)";
+
+  # Reused by the default Visualize view + the saved filters below.
+  internetOnlyFilter = "${srcPublic} OR ${dstPublic}"; # at least one public endpoint
+  outboundFilter = "${srcPrivate} AND ${dstPublic}"; # you → internet (uploads)
+  inboundFilter = "${srcPublic} AND ${dstPrivate}"; # internet → you (downloads)
+  lanInternalFilter = "${srcPrivate} AND ${dstPrivate}"; # LAN-internal chatter
 
   # Kafka KRaft cluster ID derived from the project name, in pure Nix: base64url
   # (no padding) of md5("nnh"). md5 is exactly 16 bytes — the length a Kafka UUID
@@ -235,16 +243,22 @@ in
             server = "localhost:6379";
           };
         };
-        # Open the Visualize tab on something useful by default: internet-only,
-        # ranked by total (limit-type "avg" over the window == ordered by total
-        # bytes — there is no "total" rank; avg is equivalent), Src→Dst AS.
+        # Pre-configured Visualize so the operator lands on a READABLE, on-purpose
+        # view without fiddling. Default = the OUTBOUND sense (you → internet), which
+        # makes "your side" the readable pivot: each internal host by NAME
+        # (SrcNetName, from the ndh catalog) stacked against the destination AS
+        # (DstAS, named via the asns dict — GitHub, Amazon, …). The default SrcAS→DstAS
+        # would collapse every internal host into the single AS 65000 ("home") — the
+        # exact "can't tell my sources apart" problem. Downloads are one click away via
+        # the "Inbound" saved filter. limit-type "avg" over the window == ranked by
+        # total bytes (there is no "total" rank; avg is equivalent).
         default-visualize-options = {
           graph-type = "stacked";
           start = "24 hours ago";
           end = "now";
-          filter = internetOnlyFilter;
+          filter = outboundFilter;
           dimensions = [
-            "SrcAS"
+            "SrcNetName"
             "DstAS"
           ];
           limit = 10;
@@ -252,10 +266,27 @@ in
         };
         database = {
           dsn = "/var/lib/akvorado/console.sqlite";
+          # One-click presets. Orientation is address-based (see the filter `let`), so
+          # they hold on the hotspot too. Pick the sense, then set dimensions to taste
+          # (SrcNetName for "which of my hosts", DstAS/Dst2ndAS for "toward whom",
+          # Dst{Addr,Port} to drill in) and a graph type (stacked = over time, sankey =
+          # who→whom totals).
           saved-filters = [
             {
-              description = "Internet only (excludes LAN-internal)";
+              description = "Internet only (either endpoint public)";
               content = internetOnlyFilter;
+            }
+            {
+              description = "Outbound — you → internet (uploads)";
+              content = outboundFilter;
+            }
+            {
+              description = "Inbound — internet → you (downloads)";
+              content = inboundFilter;
+            }
+            {
+              description = "LAN internal only (no internet)";
+              content = lanInternalFilter;
             }
           ];
         };

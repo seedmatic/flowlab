@@ -282,6 +282,63 @@ Incus remote) brings the whole appliance up in the `nnh` Incus project:
 | `tailscale` | tailnet node identity (`nikopol-netflow`)
 |===
 
+== Reading the flows (console)
+
+The console is at `http://nnh-outlet.nikopol`, *Visualize* tab.
+
+*The orientation caveat.* The probe is a *single exporter with no NetFlow direction*
+(the no-direction `interfaces.map`), so every flow lands `InIfBoundary=external,
+OutIfBoundary=undefined` — akvorado *cannot* tell "in" from "out" on its own.  Worse,
+addressing is network-dependent: on the hotspot the Mac gets a *carrier* IP (a real
+public AS), not our private `65000`.  So *direction is decided by which endpoint is
+private*, address-based — never by AS (that breaks off the home LAN) and never by
+boundary (undefined here).  The four saved filters encode exactly that:
+
+[cols="1,3"]
+|===
+| Saved filter | Meaning
+
+| *Outbound — you → internet* | `SrcAddr` private AND `DstAddr` public (uploads)
+| *Inbound — internet → you* | `SrcAddr` public AND `DstAddr` private (downloads)
+| *Internet only* | either endpoint public (both senses, LAN chatter excluded)
+| *LAN internal only* | both endpoints private (no internet)
+|===
+
+*Attribution — who is who.* "Your side" is named from the ndh catalog: `SrcNetName`/
+`DstNetName` carry the per-host name (`nikopol`, `vz.bioskop`, …) and `SrcAS`/`DstAS`
+the private AS (`65000 home`, `65010 rke2-cluster`, `65020 gateway`).  The internet
+side gets its real AS *name* from the `asns` dictionary (akvorado's built-in table:
+`13335 Cloudflare`, `36459 GitHub`, `14618 Amazon`, `5410 Bouygues Telecom`, …).
+
+*Dimensions — the fix for "I can't tell my sources apart".* The default `SrcAS→DstAS`
+collapses every internal host into the one AS `65000`.  Pick instead:
+
+* `SrcNetName` — *which of my hosts* (per-host, readable).  The pre-configured default.
+* `DstAS` / `Dst2ndAS` — *toward which network* (named).
+* `DstAddr` / `DstPort` — drill into a specific destination / service.
+
+*Graph modes — when to use which:*
+
+[cols="1,3"]
+|===
+| Mode | Use it for
+
+| *stacked* (default) | *bytes over time* — the core flowlab question ("what ate my GB, and when").  Each dimension value is a band; height = bytes in each time bucket.
+| *stacked 100%* | the same, normalized to share-of-total per bucket (proportions, not volume).
+| *lines* | one line per series — comparing trends/spikes without the stacking.
+| *grid* | small-multiples: one mini time-chart per series, side by side.
+| *sankey* | *who → whom, as totals over the whole window* (no time axis).  Left column = one dimension, right = the next, band width = bytes.  With *Outbound* + dimensions `SrcNetName, DstAS` it draws `nikopol → GitHub`, `nikopol → Amazon` — the clearest "where did my upload go".  Add a 3rd dimension (e.g. `DstAddr`) for a third column.
+|===
+
+TIP: Sankey needs *≥2 dimensions* and shows a *snapshot total*, so pair it with a
+direction filter (Outbound/Inbound) — mixing both senses makes the bands ambiguous
+(your side would appear on both the left and the right).  For "over time" always use
+*stacked*.
+
+The pre-configured default lands on *Outbound, stacked, `SrcNetName → DstAS`, last 24 h*
+— your hosts and where their uploads went.  Flip to the *Inbound* saved filter for the
+download side (usually the bigger number on a metered uplink).
+
 == Related
 
 * `CLAUDE.md` — the architecture summary + the hard-won learnings (pmacct/macOS

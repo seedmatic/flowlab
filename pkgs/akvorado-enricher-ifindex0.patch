@@ -1,0 +1,44 @@
+diff --git a/outlet/core/enricher.go b/outlet/core/enricher.go
+index 23456a9b..c09a5a09 100644
+--- a/outlet/core/enricher.go
++++ b/outlet/core/enricher.go
+@@ -79,11 +79,34 @@ func (w *worker) enrichFlow(exporterIP netip.Addr, exporterStr string) bool {
+ 		}
+ 	}
+ 
+-	// We need at least one of them.
+-	if flow.OutIf == 0 && flow.InIf == 0 {
+-		c.metrics.flowsErrors.WithLabelValues(exporterStr, "input and output interfaces missing").Inc()
+-		skip = true
+-	} else if flowExporterName == "" {
++	// pmacct on macOS cannot stamp an ifindex when capturing without a pcap
++	// direction (the only mode that records BOTH directions there), so its flows
++	// arrive with InIf==OutIf==0. Rather than drop them, resolve the exporter via a
++	// lookup with ifindex 0: flowlab's static metadata provider has a `default`
++	// interface (the en0 uplink, boundary=external) that applies to every ifindex,
++	// so this yields the exporter name + interface. Without a real direction we
++	// attribute the flow to the input side.
++	if flow.InIf == 0 && flow.OutIf == 0 {
++		answer := c.d.Metadata.Lookup(t, exporterIP, 0)
++		if answer.Found {
++			flowExporterName = answer.Exporter.Name
++			expClassification.Region = answer.Exporter.Region
++			expClassification.Role = answer.Exporter.Role
++			expClassification.Tenant = answer.Exporter.Tenant
++			expClassification.Site = answer.Exporter.Site
++			expClassification.Group = answer.Exporter.Group
++			flowInIfName = answer.Interface.Name
++			flowInIfDescription = answer.Interface.Description
++			flowInIfSpeed = uint32(answer.Interface.Speed)
++			inIfClassification.Provider = answer.Interface.Provider
++			inIfClassification.Connectivity = answer.Interface.Connectivity
++			inIfClassification.Boundary = answer.Interface.Boundary
++		}
++	}
++
++	// We need exporter metadata; the ifindex-0 fallback above covers pmacct's
++	// direction-less flows, so a missing name is now the only reason to drop.
++	if flowExporterName == "" {
+ 		c.metrics.flowsErrors.WithLabelValues(exporterStr, "metadata missing").Inc()
+ 		skip = true
+ 	}

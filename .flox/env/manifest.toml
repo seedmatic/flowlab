@@ -1,0 +1,32 @@
+schema-version = "1.10.0"
+
+## flowlab dev environment.
+##
+##  $ flox install gum   <- puts a package in [install] below
+##  $ flox search gum    <- search for a package
+##  $ flox show gum      <- show all versions of a package
+
+[install]
+## Incus client. The full `incus` daemon is Linux-only in the nixpkgs/flox
+## catalog, but its client sub-binary builds on both platforms via the
+## `pkgs.incus.passthru.client` derivation, surfaced as `.#incus-client`.
+## We REUSE rke2lab's output rather than duplicate the one-liner — this is the
+## single most important line to inherit: it puts `incus` on PATH, and the
+## remote to nikopol-nixos is shared operator state in ~/.config/incus (one-time
+## `incus remote add nikopol https://nikopol-nixos.local:8443`), so the flowlab
+## collector is just another instance in the Incus daemon rke2lab already targets.
+##
+## A `.flake` reference to the GitHub repo (not `path:.`) keeps manifest.lock
+## portable (a commit SHA, not a dev-machine absolute path). Bump with
+## `flox upgrade` / `flox update`.
+incus-client.flake = "github:nxmatic/rke2lab#incus-client"
+gnutar.pkg-path = "gnutar"
+xz.pkg-path = "xz"
+
+[vars]
+
+[hook]
+
+[profile]
+
+[options]

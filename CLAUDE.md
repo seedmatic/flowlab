@@ -32,16 +32,27 @@ Probe (bare metal, macOS)  ──NetFlow v9──▶  Collector appliance (NixOS
 - **Akvorado enricher gates** (`outlet/core/enricher.go`): a flow is dropped unless it has
   (1) `InIf` **or** `OutIf` ≠ 0, (2) exporter metadata, (3) a sampling rate. With no SNMP on the
   probe, satisfy them with:
-  - pmacct `pcap_ifindex: map` + an `interfaces.map` assigning ifindex 1 to `en0`;
   - Akvorado `outlet.metadata.providers: [{type: static, exporters: {"::/0": {name, ifindexes,
     boundary: external}}}]` — **`::/0` catch-all** because the exporter IP changes with the network;
   - `outlet.core.default-sampling-rate: 1`.
-- **pmacct `interfaces.map` on macOS**: use **TWO** entries (`direction=in` **and** `direction=out`).
-  A single `direction=in` entry triggers `pcap_setdirection()`, whose macOS implementation drops
-  most packets. On macOS the 2nd (out) handle "gives up" → one handle captures everything
-  promiscuously with `in_iface` set → complete + no double-count.
-  ⚠️ **pcap capture completeness on macOS is still UNVERIFIED** — validate it once the collector
-  endpoint is reliably native (a clean 20 MB download must show ~20 MB captured).
+  - **our patch** `pkgs/akvorado-enricher-ifindex0.patch`: because the macOS probe stamps
+    `in_iface=out_iface=0` (no-direction map, above), gate (1) would drop every flow. The patch
+    resolves `InIf==OutIf==0` flows via a metadata `Lookup(exporterIP, 0)` — the `::/0` provider's
+    `default` interface (en0/external) applies to ifindex 0 — instead of dropping. Kept as a nix
+    `overrideAttrs` patch on the pinned `akvorado` input (not a fork): stays on the tag, rebases
+    trivially, touches no `go.mod` (vendorHash intact), upstreamable as-is.
+- **pmacct `interfaces.map` on macOS**: use a **SINGLE entry with NO `direction=`**
+  (`ifindex=1 ifname=en0`). ANY `direction=` entry makes capture **inbound-only** on macOS
+  (uploads lost): `direction=out` → `pcap_setdirection(PCAP_D_OUT)` is unsupported ("Setting
+  direction to outgoing only is not supported"), and `direction=in` → `PCAP_D_IN` drops most
+  packets. The old "TWO entries = complete capture" learning was **WRONG** — it was inbound-only.
+  With no direction, libpcap captures BOTH senses promiscuously → complete byte accounting.
+  Trade-off: pmacct only applies the map's `ifindex` when a direction is set, so direction-less
+  flows are stamped `in_iface=out_iface=0` — handled on the collector by our enricher patch (below).
+  ✅ **VALIDATED 2026-08-15**: a vz→bioskop transfer shows the OUTBOUND flow
+  (`SrcAddr=vz DstPort=9999`, 166 KB / 144 pkts) in ClickHouse; before the fix that direction was
+  absent. (`nc`/python bulk vz↔bioskop stalls at ~146 KB — a *separate* Wi-Fi/bridge path issue,
+  irrelevant to the hotspot-uplink accounting that is flowlab's actual purpose.)
 - **Addressing is network-dependent** (hotspot = carrier DHCP, every IP changes): keep the
   exporter key `::/0`; the "internet only" view excludes RFC1918 + bogons (network-agnostic).
 - **Enrichment / names**: Akvorado has **no reverse-DNS**. Use ASN + GeoIP instead —

@@ -1,0 +1,6 @@
+# nix build result symlinks
+/result
+/result-*
+
+# machine-local scratch (build logs, image staging, …) — never committed
+/.local.d/

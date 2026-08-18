@@ -19,7 +19,7 @@
 # LaunchDaemon installer that renders the config + interfaces.map + plist at
 # deploy time — mirroring how nerd-tart lands a per-VM YAML on the vz host
 # rather than baking it into a system module.  It is copied over via the same
-# `nix copy` rail as the Tart artifacts (see `netflow-probe-deploy` in flake.nix).
+# `nix copy` rail as the Tart artifacts (see `nnh-probe-deploy` in flake.nix).
 {
   lib,
   pmacct,
@@ -29,10 +29,10 @@
   symlinkJoin,
 }:
 let
-  label = "io.nxmatic.netflow-probe";
+  label = "io.nxmatic.nnh-probe";
   plistPath = "/Library/LaunchDaemons/${label}.plist";
-  logPath = "/var/log/netflow-probe.log";
-  confDir = "/etc/pmacctd";
+  logPath = "/var/log/nnh-probe.log";
+  confDir = "/etc/nnh-probe";
 
   # The default pmacct build pulls in Linux-only deps (libnetfilter_log for
   # NFLOG, numactl via the MySQL feature) that refuse to evaluate on Darwin.
@@ -46,10 +46,10 @@ let
   };
 
   install = writeShellApplication {
-    name = "netflow-probe-install";
+    name = "nnh-probe-install";
     runtimeInputs = [ coreutils ];
     text = builtins.readFile (
-      replaceVars ./netflow-probe.d/install.sh {
+      replaceVars ./nnh-probe.d/install.sh {
         pmacctd = "${pmacctd}";
         label = label;
         plist = plistPath;
@@ -60,10 +60,10 @@ let
   };
 
   uninstall = writeShellApplication {
-    name = "netflow-probe-uninstall";
+    name = "nnh-probe-uninstall";
     runtimeInputs = [ coreutils ];
     text = builtins.readFile (
-      replaceVars ./netflow-probe.d/uninstall.sh {
+      replaceVars ./nnh-probe.d/uninstall.sh {
         label = label;
         plist = plistPath;
         confDir = confDir;
@@ -72,7 +72,7 @@ let
   };
 in
 symlinkJoin {
-  name = "netflow-probe";
+  name = "nnh-probe";
   paths = [
     install
     uninstall
@@ -81,6 +81,6 @@ symlinkJoin {
   meta = {
     description = "pmacct nfprobe NetFlow probe + root LaunchDaemon installer for the bare-metal vz host";
     platforms = lib.platforms.darwin;
-    mainProgram = "netflow-probe-install";
+    mainProgram = "nnh-probe-install";
   };
 }

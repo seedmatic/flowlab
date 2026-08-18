@@ -41,7 +41,7 @@
       lib = nixpkgs.lib;
 
       # The probe runs on the bare-metal vz Mac (it MUST capture the host's own
-      # physical en0 — see pkgs/netflow-probe.nix); the collector is a NixOS
+      # physical en0 — see pkgs/nnh-probe.nix); the collector is a NixOS
       # Incus instance on nikopol-nixos (a Linux VM on the same Mac).
       probeSystem = "aarch64-darwin";
       collectorSystem = "aarch64-linux";
@@ -49,21 +49,24 @@
       probePkgs = nixpkgs.legacyPackages.${probeSystem};
 
       # ── Probe (migrated from ndh; flowlab owns it now) ──────────────────────
-      netflowProbe = probePkgs.callPackage ./pkgs/netflow-probe.nix { };
+      probe = probePkgs.callPackage ./pkgs/nnh-probe.nix { };
 
       # Deploy: push the (small) closure to the vz host over ssh, then render +
       # load the root LaunchDaemon via sudo. A push needs no reverse connection,
       # so it works from any operator wherever `ssh <vz-host>` resolves.
       # Default vz host: vz.nikopol.
-      netflowProbeDeploy = probePkgs.writeShellApplication {
-        name = "netflow-probe-deploy";
+      probeDeploy = probePkgs.writeShellApplication {
+        # Binary lands in PATH (nix profile / devshell) → keep the disambiguating
+        # nnh- prefix; `probe-deploy` alone is too generic. (The nix let-binding
+        # above stays short — we're already in nnh.)
+        name = "nnh-probe-deploy";
         runtimeInputs = [
           probePkgs.nix
           probePkgs.openssh
         ];
         text = builtins.readFile (
-          probePkgs.replaceVars ./pkgs/netflow-probe.d/deploy.sh {
-            bundle = "${netflowProbe}";
+          probePkgs.replaceVars ./pkgs/nnh-probe.d/deploy.sh {
+            bundle = "${probe}";
           }
         );
       };
@@ -253,15 +256,15 @@
             outletSquashfs = "${outletSystem.config.system.build.squashfs}";
             outletProfile = "${outletProfileYaml}";
             # Chain the upstream probe deploy at the end (collector first, then probe).
-            probeDeploy = "${netflowProbeDeploy}/bin/netflow-probe-deploy";
+            probeDeploy = "${probeDeploy}/bin/nnh-probe-deploy";
           }
         );
       };
     in
     {
       packages.${probeSystem} = {
-        netflow-probe = netflowProbe;
-        netflow-probe-deploy = netflowProbeDeploy;
+        nnh-probe = probe;
+        nnh-probe-deploy = probeDeploy;
         collector-deploy = collectorDeploy;
       };
 
@@ -275,15 +278,15 @@
       # One attrset per dynamic system key: Nix can't merge two separate
       # `apps.${probeSystem}.<x>` bindings (dynamic attributes don't combine).
       apps.${probeSystem} = {
-        netflow-probe-deploy = {
+        nnh-probe-deploy = {
           type = "app";
-          program = "${netflowProbeDeploy}/bin/netflow-probe-deploy";
-          meta.description = "Push the probe closure to the vz host and load the root LaunchDaemon";
+          program = "${probeDeploy}/bin/nnh-probe-deploy";
+          meta.description = "Push the nnh-probe closure to the vz Mac + load its root LaunchDaemon (pmacctd → nnh-inlet.nikopol:2055) — docs: https://github.com/seedmatic/nnh/blob/main/docs/architecture.adoc";
         };
         collector-deploy = {
           type = "app";
           program = "${collectorDeploy}/bin/collector-deploy";
-          meta.description = "Build the collector image and bring it up as an Incus instance in the flowlab project";
+          meta.description = "Build both images + bring up the two-instance appliance (nnh-inlet + nnh-outlet) on bare-br in the nnh Incus project — docs: https://github.com/seedmatic/nnh/blob/main/docs/architecture.adoc";
         };
       };
 

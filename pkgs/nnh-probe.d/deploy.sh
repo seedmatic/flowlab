@@ -1,6 +1,6 @@
 # Deploy the NetFlow probe to the bare-metal vz host: push the (small) closure
 # over ssh, then render + load the root LaunchDaemon via sudo. Rendered by
-# pkgs.replaceVars from flake.nix (token @bundle@ = the netflow-probe closure).
+# pkgs.replaceVars from flake.nix (token @bundle@ = the nnh-probe closure).
 #
 # A push needs no reverse connection, so it works from any operator wherever
 # `ssh <vz-host>` resolves. Default vz host: vz.nikopol.
@@ -16,7 +16,7 @@ fi
 
 collector="${1:-${NETFLOW_COLLECTOR:-}}"
 if [[ -z "$collector" ]]; then
-  echo "usage: netflow-probe-deploy [vz-host] <collector-host:port>" >&2
+  echo "usage: nnh-probe-deploy [vz-host] <collector-host:port>" >&2
   exit 2
 fi
 
@@ -27,4 +27,4 @@ bundle=@bundle@
 nix copy --no-check-sigs --to "ssh-ng://$vz_host" "$bundle"
 
 # shellcheck disable=SC2029
-exec ssh -t "$vz_host" "sudo '$bundle/bin/netflow-probe-install' '$collector'"
+exec ssh -t "$vz_host" "sudo '$bundle/bin/nnh-probe-install' '$collector'"

@@ -99,9 +99,15 @@ deploy_instance() {
 }
 
 # Store node first (it runs the orchestrator the inlet fetches its config from),
-# then the ingest edge.
-deploy_instance nnh-outlet outlet "$outlet_metatar" "$outlet_rootfs" outlet
-deploy_instance nnh-inlet inlet "$inlet_metatar" "$inlet_rootfs" inlet
+# then the ingest edge. Instance NAMES are unprefixed (we're already in the `nnh`
+# project); the .nikopol DNS names stay nnh-inlet/nnh-outlet because bare-br is
+# dns.mode=dynamic — the record follows the guest's DHCP hostname (networking.
+# hostName = nnh-*), NOT the instance name.
+# ⚠️ REQUIRES bare-br dns.mode=dynamic (ndh-owned). Under the default `managed`
+# mode the record would follow the instance name (inlet.nikopol/outlet.nikopol),
+# breaking the by-name wiring (orchestratorUrl, kafka advertised, probe target).
+deploy_instance outlet outlet "$outlet_metatar" "$outlet_rootfs" outlet
+deploy_instance inlet inlet "$inlet_metatar" "$inlet_rootfs" inlet
 
 # Deploy the UPSTREAM probe on vz, pointed at the inlet BY NAME. Ordered AFTER the
 # launch on purpose: the inlet must be listening on :2055 (after it has fetched its
@@ -109,4 +115,4 @@ deploy_instance nnh-inlet inlet "$inlet_metatar" "$inlet_rootfs" inlet
 # fire-and-forget). Interactive — the probe deploy runs `ssh -t vz sudo …`.
 @probeDeploy@ "$vz_host" "$inlet_addr":2055
 
-: "[collector-deploy] done — console http://nnh-outlet.nikopol:8083 , NetFlow $inlet_addr:2055/udp"
+: "[collector-deploy] done — console http://nnh-outlet.nikopol , NetFlow $inlet_addr:2055/udp"

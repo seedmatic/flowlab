@@ -146,6 +146,14 @@ in
     ];
   };
 
+  # The console binds :80 (privileged, see console.http.listen below) but the
+  # akvorado daemons run as the non-root `akvorado` user — grant the console unit
+  # the one capability that lets a non-root process bind a low port. Kept in the
+  # host (not the generic module) since it's a consequence of THIS host's port choice.
+  systemd.services.akvorado-console.serviceConfig.AmbientCapabilities = [
+    "CAP_NET_BIND_SERVICE"
+  ];
+
   # ── Akvorado: orchestrator + outlet + console (the inlet runs on nnh-inlet) ──
   services.akvorado = {
     daemons = [
@@ -251,7 +259,10 @@ in
 
       console = {
         http = {
-          listen = ":8083";
+          # Bind the UI on :80 so it's reachable as http://nnh-outlet.nikopol (no
+          # port). :80 is privileged and akvorado runs as the non-root `akvorado`
+          # user, so the console unit is granted CAP_NET_BIND_SERVICE below.
+          listen = ":80";
           cache = {
             type = "redis";
             server = "localhost:6379";

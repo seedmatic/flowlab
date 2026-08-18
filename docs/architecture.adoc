@@ -1,0 +1,276 @@
+= flowlab — Architecture
+:toc: macro
+:toclevels: 3
+
+toc::[]
+
+== Overview
+
+*flowlab* is an *unsampled network-flow observability appliance*.  Its single
+purpose: understand and verify — with *exact, per-destination byte accounting over
+time* — what this MacBook consumes toward the internet over its uplink (the Android
+hotspot), so surprises are explainable and future carrier bills match reality.
+*Sampling is banned* (sampled flows only estimate bytes).
+
+The system is a two-stage pipeline:
+
+* a *probe* on the bare-metal Mac captures the physical Wi-Fi and exports NetFlow v9;
+* a *collector* (Akvorado, split across two Incus instances) ingests, enriches and
+  stores every flow, and serves a console.
+
+It is a *tenant* of two neighbours in the seedmatic lab: *ndh* provisions the
+network it attaches to (the `bare-br` segment) and owns the *network catalog* it
+reads for attribution; *rke2lab* contributes its cluster spans to that catalog.
+
+== C4 · Level 1 — System context
+
+[mermaid]
+....
+flowchart TB
+  OP["Operator\n(browser on the workstation / tailnet)"]:::actor
+  UP{{"Uplink under scrutiny\nMacBook en0 → Android hotspot → internet"}}:::ext
+
+  subgraph flowlab [flowlab appliance]
+    PROBE["Probe\npmacctd nfprobe on bare-metal en0"]:::wl
+    COLL["Collector\nsplit Akvorado (2 Incus instances)"]:::wl
+  end
+
+  NDH[("ndh\nbare-br segment + network catalog\n{cidr,name,asn} + asns")]:::data
+  RKE[("rke2lab\ncluster spans (65010/65020)")]:::data
+
+  UP -->|"every packet on en0"| PROBE
+  PROBE -->|"NetFlow v9 (unsampled)"| COLL
+  OP -->|"Visualize bytes/dest over time"| COLL
+  NDH -->|"provisions bare-br (runtime)"| COLL
+  NDH -.->|"catalog: NetName + AS attribution (eval)"| COLL
+  RKE -.->|"lib.networkBlueprint → ndh catalog"| NDH
+  COLL -.->|"lib.networkBlueprint (its 2 hosts)"| NDH
+
+  classDef actor fill:#ddd6fe,stroke:#5b21b6,color:#000;
+  classDef ext fill:#e5e7eb,stroke:#374151,color:#000;
+  classDef wl fill:#bbf7d0,stroke:#166534,color:#000;
+  classDef data fill:#fde68a,stroke:#b45309,color:#000;
+....
+
+[cols="1,3"]
+|===
+| Legend | Meaning
+
+| purple | actor (operator)
+| grey   | the uplink being measured
+| green  | flowlab's own workloads
+| yellow | neighbour-owned data (the shared network catalog)
+|===
+
+*Why the probe MUST run on bare metal:* the MacBook's own unicast to the gateway
+only exists on the host's *physical* `en0`.  A bridged guest never sees it (switched
+L2), so a VM-hosted probe would miss the very traffic being accounted.
+
+== C4 · Level 2 — Containers
+
+The pipeline is split across *two NixOS Incus instances*, both attached to ndh's
+`bare-br` segment.  `nnh-inlet` is a thin, stateless ingest edge; `nnh-outlet` is
+the stateful backend (the "brain").  They address each other *by name* over bare-br.
+
+[mermaid]
+....
+flowchart LR
+  subgraph mac [bare-metal vz Mac]
+    PMACCT["pmacctd (nnh-probe)\nnfprobe, sampling_rate=1\nen0, no-direction map"]:::wl
+  end
+
+  subgraph inlet [nnh-inlet.nikopol — ingest edge]
+    IN["akvorado inlet\nUDP :2055"]:::wl
+  end
+
+  subgraph outlet [nnh-outlet.nikopol — store/backend]
+    ORCH["akvorado orchestrator\n:8080, serves config"]:::wl
+    OUT["akvorado outlet\nenrich + write"]:::wl
+    CON["akvorado console\n:80 (UI)"]:::wl
+    KAFKA[("Kafka (KRaft)\ntopic: flows")]:::infra
+    CH[("ClickHouse\nflow history")]:::infra
+    REDIS[("Redis\nconsole cache")]:::infra
+  end
+
+  OPB["Operator browser"]:::actor
+
+  PMACCT -->|"NetFlow v9 → nnh-inlet.nikopol:2055"| IN
+  IN -->|"produce raw flows"| KAFKA
+  KAFKA -->|"consume"| OUT
+  OUT -->|"enriched rows"| CH
+  CON -->|"query"| CH
+  CON -->|"cache"| REDIS
+  ORCH -.->|"serves pipeline config (HTTP)"| IN
+  ORCH -.->|"serves config + provisions schemas"| OUT
+  ORCH -.->|"provisions topic"| KAFKA
+  OPB -->|"http://nnh-outlet.nikopol"| CON
+
+  classDef wl fill:#bbf7d0,stroke:#166534,color:#000;
+  classDef infra fill:#bfdbfe,stroke:#1e40af,color:#000;
+  classDef actor fill:#ddd6fe,stroke:#5b21b6,color:#000;
+....
+
+[cols="1,3"]
+|===
+| Container | Role
+
+| *pmacctd (nnh-probe)* | libpcap capture of `en0`, unsampled; exports NetFlow v9 to the inlet BY NAME.  Root LaunchDaemon on the vz Mac (outside the darwin fleet), rendered at deploy time.
+| *akvorado inlet* | receives NetFlow on `:2055`, produces raw flows to Kafka.  Fetches its ENTIRE config from the orchestrator — a stateless forwarder.
+| *akvorado orchestrator* | holds the whole pipeline config (one `akvorado.yaml`), serves it to every daemon; provisions the Kafka topic + ClickHouse schemas.
+| *akvorado outlet* | consumes Kafka, enriches (attribution + GeoIP) and writes rows to ClickHouse.
+| *akvorado console* | the Visualize UI, on `:80`; reads ClickHouse, caches in Redis.
+| *Kafka / ClickHouse / Redis* | reused nixpkgs backends; native systemd, *no Docker/podman* (the netavark UDP hostport DNAT was unreliable — see CLAUDE.md).
+|===
+
+NOTE: All the pipeline configuration (the `:2055` listener, the Kafka target, the
+sampling rate, the attribution networks, …) lives in the *orchestrator's* config on
+`nnh-outlet`.  `nnh-inlet` carries none — it just runs `akvorado inlet
+http://nnh-outlet.nikopol:8080` and fetches everything.
+
+== Flow — the journey of one flow
+
+[mermaid]
+....
+sequenceDiagram
+  autonumber
+  participant EN as en0 (bare metal)
+  participant PM as pmacctd
+  participant IN as inlet
+  participant KA as Kafka
+  participant OU as outlet
+  participant CH as ClickHouse
+  participant UI as console
+
+  EN->>PM: packets (both directions, promiscuous)
+  Note over PM: aggregate by 5-tuple, sampling_rate=1 (exact bytes)
+  PM->>IN: NetFlow v9 to nnh-inlet.nikopol port 2055 (after ~60s)
+  Note over IN: no-direction map stamps InIf=OutIf=0 — enricher-ifindex0 patch resolves via the catch-all exporter
+  IN->>KA: produce to topic flows
+  KA->>OU: consume
+  Note over OU: enrich — SrcAS/DstAS + NetName from ndh catalog, GeoIP for public dests
+  OU->>CH: write enriched row
+  UI->>CH: Visualize (internet-only, ranked by total bytes)
+....
+
+CAUTION: The macOS capture MUST use a *single interfaces.map entry with NO
+`direction=`* — any direction makes libpcap inbound-only on macOS (uploads lost).
+The trade-off (flows stamped `InIf=OutIf=0`) is handled on the collector by our
+`pkgs/akvorado-enricher-ifindex0.patch`, which resolves ifindex-0 via the `::/0`
+static exporter instead of dropping.  See CLAUDE.md for the full learning.
+
+== Attribution & the catalog federation
+
+flowlab labels *"your side"* of every flow — a `NetName` + AS — from *ndh's network
+catalog* (the single source of truth), and public destinations get their real AS
+from GeoIP.  No addressing or AS mapping is hardcoded.
+
+[mermaid]
+....
+flowchart TB
+  subgraph eval [Eval / flake layer — data flows UP]
+    direction LR
+    NNHb["nnh (flowlab)\nlib.networkBlueprint\n(its 2 bare-br hosts, ip=null)"]:::wl
+    RKEb["rke2lab\nlib.networkBlueprint\n(cluster spans)"]:::wl
+    CAT["ndh catalog\nnetplan.segments {cidr,name,asn} + asns"]:::data
+    RKEb -->|"union"| CAT
+    NNHb -->|"union"| CAT
+  end
+  CAT -.->|"consumed at eval → outlet.networks + clickhouse.asns"| OUT["outlet enrichment\n(most-specific-prefix-wins)"]:::wl
+  GEO[("GeoIP mirrors\nASN + City (tokenless)")]:::infra
+  GEO -.->|"public dests → real AS + geo"| OUT
+
+  classDef wl fill:#bbf7d0,stroke:#166534,color:#000;
+  classDef data fill:#fde68a,stroke:#b45309,color:#000;
+  classDef infra fill:#bfdbfe,stroke:#1e40af,color:#000;
+....
+
+* *Consume* — `ndh.catalog.netplan.segments` become `outlet.networks` (prefix →
+  `{name, asn}`, most-specific-wins) and `ndh.catalog.netplan.asns` becomes the
+  `asns` ClickHouse dictionary.  Private ASes name your side (e.g. `65000 home`,
+  `65010 rke2-cluster`, `65020 gateway`); per-host `/32`s refine the `NetName`.
+* *Contribute* — flowlab exposes `lib.networkBlueprint` declaring the two collector
+  hosts (`nnh-inlet`/`nnh-outlet`, `ip = null` — resolved via DNS), which ndh unions
+  into the catalog.
+* *No flake cycle* — ndh must input nnh (to read the blueprint) while nnh inputs ndh
+  (to read the catalog).  The mutual dependency is broken with reciprocal
+  `inputs.<other>.inputs.<self>.follows = ""` (empty follows = the ROOT flake, a
+  fixpoint).  Invariant: the blueprint stays *self-contained* (never reads the
+  catalog) or the value cycle returns.  See the hub note
+  `flake-mutual-dependency-follows-root`.
+
+== Reachability & naming
+
+Both instances are plain *DHCP tenants* of `bare-br` (ndh-provisioned:
+`172.16.6.0/25`, `dns.domain=nikopol`, dnsmasq/gateway `172.16.6.1`).  Everything is
+addressed *by name* — no static IPs.
+
+[mermaid]
+....
+flowchart LR
+  PROBE["pmacctd on vz\n(/etc/resolver/nikopol → 172.16.6.1)"]:::wl
+  VZ["vz.nikopol en0 alias\n172.16.6.253/30 (ndh baremetal-link)"]:::ext
+  SR["nikopol-nixos\nsubnet router (.254, ip_forward)"]:::infra
+  BR["bare-br dnsmasq/gateway\n172.16.6.1/25, .nikopol zone"]:::infra
+  I["nnh-inlet.nikopol\n(DHCP)"]:::wl
+  O["nnh-outlet.nikopol\n(DHCP, console :80)"]:::wl
+  TS{{"tailnet\n(/24 advertised, split-DNS)"}}:::ctrl
+
+  PROBE --> VZ
+  VZ -->|"/30 P2P"| SR
+  SR -.->|"route 172.16.6.0/25"| BR
+  BR -->|"DHCP lease + .nikopol record"| I
+  BR -->|"DHCP lease + .nikopol record"| O
+  TS -.->|"peers resolve .nikopol → 172.16.6.1, reach /24 via SR"| BR
+
+  classDef wl fill:#bbf7d0,stroke:#166534,color:#000;
+  classDef infra fill:#bfdbfe,stroke:#1e40af,color:#000;
+  classDef ext fill:#e5e7eb,stroke:#374151,color:#000;
+  classDef ctrl fill:#fecaca,stroke:#991b1b,color:#000;
+....
+
+Three gates must all hold (any one missing → resolves-but-unreachable, or vice
+versa):
+
+. *Route* — nikopol-nixos advertises `172.16.6.0/24` into the tailnet; peers reach
+  the instances via the subnet router.  The vz Mac reaches bare-br via the
+  `172.16.6.253/30` link (ndh's `baremetal-link` daemon).
+. *Name* — `bare-br` dnsmasq serves the `.nikopol` zone.  With `dns.mode=dynamic`
+  the record follows the guest's DHCP hostname (`networking.hostName` = `nnh-inlet`/
+  `nnh-outlet`), so the Incus instance names can stay unprefixed (`inlet`/`outlet`).
+. *Resolver (macOS)* — the vz Mac needs a scoped `/etc/resolver/nikopol → 172.16.6.1`
+  (ndh's `baremetal-resolvers` darwin module); a flat resolver never routes a
+  split-horizon domain.
+
+CAUTION: `bare-br` runs `ipv4.nat=false` — instances have *no internet egress*
+(known ndh open item, fixed by a selective masquerade on the subnet router).  Impact
+on flowlab: only the periodic GeoIP refresh; the databases persist on a volume, so
+current enrichment is unaffected.
+
+== Deployment
+
+`nix run .#collector-deploy` (a darwin operator tool driving the `nikopol-nixos`
+Incus remote) brings the whole appliance up in the `nnh` Incus project:
+
+. builds both aarch64-linux images (via the remote builder);
+. ensures the project, the outlet's persistent volumes, and both profiles;
+. imports each image and *launches* the instances — or `incus rebuild`s them from a
+  new image, which *keeps the volumes* (ClickHouse history, GeoIP DBs, the tailnet
+  identity survive updates);
+. chains the probe deploy (`nnh-probe-deploy`) last — the inlet must be listening
+  before the probe starts exporting (UDP is fire-and-forget).
+
+[cols="1,3"]
+|===
+| Persistent volume (nnh-outlet) | Survives rebuild
+
+| `data` | ClickHouse flow history
+| `akvorado` | GeoIP mmdbs + console.sqlite (saved filters/users)
+| `tailscale` | tailnet node identity (`nikopol-netflow`)
+|===
+
+== Related
+
+* `CLAUDE.md` — the architecture summary + the hard-won learnings (pmacct/macOS
+  capture, the netavark→native pivot, the enricher gates, GeoIP).
+* ndh `docs/network-catalog.adoc` + `docs/network-catalog-segments.adoc` — the
+  catalog data model and the `bare-br` segment feature flowlab attaches to.

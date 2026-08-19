@@ -1,4 +1,4 @@
-# flowlab
+# nnh
 
 Uplink network-flow observability appliance. **Goal:** understand and verify what this
 MacBook actually consumes toward the internet over its uplink — the Android hotspot today —
@@ -18,7 +18,7 @@ Probe (bare metal, macOS)  ──NetFlow v9──▶  Collector appliance (NixOS
   own unicast to the gateway only exists on the host's physical interface; a bridged guest never
   sees it (switched L2). Packaged as a nix bundle + root LaunchDaemon (migrated from `ndh`).
 - **Collector** — Akvorado (`inlet` → Kafka/KRaft → `outlet` → ClickHouse; `console`). The
-  collector is **interchangeable** — hence `flowlab`, not `akvorado`. Runs **native on a NixOS
+  collector is **interchangeable** — hence `nnh`, not `akvorado`. Runs **native on a NixOS
   Incus instance** (systemd services, **no Docker/podman** — see learnings). Reachable via a
   dedicated bridged IP or an Incus `proxy` device for UDP :2055.
 - **Target** — eventual move to the `nikopol-wrkld` rke2 cluster (WIP in `rke2lab`).
@@ -52,7 +52,7 @@ Probe (bare metal, macOS)  ──NetFlow v9──▶  Collector appliance (NixOS
   ✅ **VALIDATED 2026-08-15**: a vz→bioskop transfer shows the OUTBOUND flow
   (`SrcAddr=vz DstPort=9999`, 166 KB / 144 pkts) in ClickHouse; before the fix that direction was
   absent. (`nc`/python bulk vz↔bioskop stalls at ~146 KB — a *separate* Wi-Fi/bridge path issue,
-  irrelevant to the hotspot-uplink accounting that is flowlab's actual purpose.)
+  irrelevant to the hotspot-uplink accounting that is nnh's actual purpose.)
 - **Addressing is network-dependent** (hotspot = carrier DHCP, every IP changes): keep the
   exporter key `::/0`; the "internet only" view excludes RFC1918 + bogons (network-agnostic).
 - **Enrichment / names**: Akvorado has **no reverse-DNS**. Use ASN + GeoIP instead —
@@ -80,7 +80,7 @@ has one — see akvorado discussions #1740).
 ## Conventions
 
 - **External-worktree operating model** (rke2lab is the reference): bare at
-  `git-bare-store/seedmatic/flowlab.git`, worktrees at
+  `git-bare-store/seedmatic/nnh.git`, worktrees at
   `git-worktree-store/seedmatic/flowlab.d/<namespace>/<branch>`, **relative paths**. Each
   conversation gets its own worktree; treat `main` as read-only reference. Creating/removing a
   worktree + its `.code-workspace` (and Bedrock backend selection) is the **`worktree` skill**.

@@ -1,4 +1,4 @@
-= flowlab — Architecture
+= nnh — Architecture
 :toc: macro
 :toclevels: 3
 
@@ -6,7 +6,7 @@ toc::[]
 
 == Overview
 
-*flowlab* is an *unsampled network-flow observability appliance*.  Its single
+*nnh* is an *unsampled network-flow observability appliance*.  Its single
 purpose: understand and verify — with *exact, per-destination byte accounting over
 time* — what this MacBook consumes toward the internet over its uplink (the Android
 hotspot), so surprises are explainable and future carrier bills match reality.
@@ -30,7 +30,7 @@ flowchart TB
   OP["Operator\n(browser on the workstation / tailnet)"]:::actor
   UP{{"Uplink under scrutiny\nMacBook en0 → Android hotspot → internet"}}:::ext
 
-  subgraph flowlab [flowlab appliance]
+  subgraph nnh [nnh appliance]
     PROBE["Probe\npmacctd nfprobe on bare-metal en0"]:::wl
     COLL["Collector\nsplit Akvorado (2 Incus instances)"]:::wl
   end
@@ -58,7 +58,7 @@ flowchart TB
 
 | purple | actor (operator)
 | grey   | the uplink being measured
-| green  | flowlab's own workloads
+| green  | nnh's own workloads
 | yellow | neighbour-owned data (the shared network catalog)
 |===
 
@@ -174,7 +174,7 @@ static exporter instead of dropping.  See CLAUDE.md for the full learning.
 
 == Attribution & the catalog federation
 
-flowlab labels *"your side"* of every flow — a `NetName` + AS — from *ndh's network
+nnh labels *"your side"* of every flow — a `NetName` + AS — from *ndh's network
 catalog* (the single source of truth), and public destinations get their real AS
 from GeoIP.  No addressing or AS mapping is hardcoded.
 
@@ -183,7 +183,7 @@ from GeoIP.  No addressing or AS mapping is hardcoded.
 flowchart TB
   subgraph eval [Eval / flake layer — data flows UP]
     direction LR
-    NNHb["nnh (flowlab)\nlib.networkBlueprint\n(its 2 bare-br hosts, ip=null)"]:::wl
+    NNHb["nnh (nnh)\nlib.networkBlueprint\n(its 2 bare-br hosts, ip=null)"]:::wl
     RKEb["rke2lab\nlib.networkBlueprint\n(cluster spans)"]:::wl
     CAT["ndh catalog\nnetplan.segments {cidr,name,asn} + asns"]:::data
     RKEb -->|"union"| CAT
@@ -202,7 +202,7 @@ flowchart TB
   `{name, asn}`, most-specific-wins) and `ndh.catalog.netplan.asns` becomes the
   `asns` ClickHouse dictionary.  Private ASes name your side (e.g. `65000 home`,
   `65010 rke2-cluster`, `65020 gateway`); per-host `/32`s refine the `NetName`.
-* *Contribute* — flowlab exposes `lib.networkBlueprint` declaring the two collector
+* *Contribute* — nnh exposes `lib.networkBlueprint` declaring the two collector
   hosts (`nnh-inlet`/`nnh-outlet`, `ip = null` — resolved via DNS), which ndh unions
   into the catalog.
 * *No flake cycle* — ndh must input nnh (to read the blueprint) while nnh inputs ndh
@@ -257,7 +257,7 @@ versa):
 
 CAUTION: `bare-br` runs `ipv4.nat=false` — instances have *no internet egress*
 (known ndh open item, fixed by a selective masquerade on the subnet router).  Impact
-on flowlab: only the periodic GeoIP refresh; the databases persist on a volume, so
+on nnh: only the periodic GeoIP refresh; the databases persist on a volume, so
 current enrichment is unaffected.
 
 == Deployment
@@ -323,7 +323,7 @@ collapses every internal host into the one AS `65000`.  Pick instead:
 |===
 | Mode | Use it for
 
-| *stacked* (default) | *bytes over time* — the core flowlab question ("what ate my GB, and when").  Each dimension value is a band; height = bytes in each time bucket.
+| *stacked* (default) | *bytes over time* — the core nnh question ("what ate my GB, and when").  Each dimension value is a band; height = bytes in each time bucket.
 | *stacked 100%* | the same, normalized to share-of-total per bucket (proportions, not volume).
 | *lines* | one line per series — comparing trends/spikes without the stacking.
 | *grid* | small-multiples: one mini time-chart per series, side by side.
@@ -344,4 +344,4 @@ download side (usually the bigger number on a metered uplink).
 * `CLAUDE.md` — the architecture summary + the hard-won learnings (pmacct/macOS
   capture, the netavark→native pivot, the enricher gates, GeoIP).
 * ndh `docs/network-catalog.adoc` + `docs/network-catalog-segments.adoc` — the
-  catalog data model and the `bare-br` segment feature flowlab attaches to.
+  catalog data model and the `bare-br` segment feature nnh attaches to.

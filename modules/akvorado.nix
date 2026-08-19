@@ -13,7 +13,7 @@
 #
 # Nobody upstream ships a services.akvorado module (akvorado discussions #1740);
 # this is authored here. `settings` is freeform (rendered to YAML), so the
-# flowlab-specific pipeline (static ::/0 exporter, geoip, filters) lives in the
+# nnh-specific pipeline (static ::/0 exporter, geoip, filters) lives in the
 # host config, not here.
 { config, lib, pkgs, ... }:
 let

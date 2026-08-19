@@ -77,12 +77,12 @@ deploy_instance() {
   local build_id
   build_id=$(basename "$(dirname "$rootfs")")
 
-  if [ "$(incus image get-property "$remote":"$alias" user.flowlab.build --project "$project" 2>/dev/null || true)" = "$build_id" ]; then
+  if [ "$(incus image get-property "$remote":"$alias" user.nnh.build --project "$project" 2>/dev/null || true)" = "$build_id" ]; then
     : "[collector-deploy] image $alias unchanged ($build_id) — skipping import"
   else
     incus image delete "$remote":"$alias" --project "$project" 2>/dev/null || true
     incus image import "$metatar" "$rootfs" "$remote": --alias "$alias" --project "$project"
-    incus image set-property "$remote":"$alias" user.flowlab.build "$build_id" --project "$project"
+    incus image set-property "$remote":"$alias" user.nnh.build "$build_id" --project "$project"
   fi
 
   if ! incus list "$remote": --project "$project" --format yaml \

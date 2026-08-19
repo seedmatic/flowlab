@@ -1,4 +1,4 @@
-# Shared base for both flowlab collector instances (nnh-inlet, nnh-outlet).
+# Shared base for both nnh collector instances (nnh-inlet, nnh-outlet).
 #
 # The pipeline is split across TWO NixOS Incus instances, BOTH attached to
 # nikopol's `bare-br` segment (ndh-provisioned: DHCP + a `.nikopol` dnsmasq zone,

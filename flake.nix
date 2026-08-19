@@ -1,8 +1,8 @@
 {
-  description = "flowlab — unsampled network-flow observability appliance (pmacct probe + Akvorado collector)";
+  description = "nnh — unsampled network-flow observability appliance (pmacct probe + Akvorado collector)";
 
   inputs = {
-    # Shared aggregator — keeps flowlab in lock-step with the rest of the
+    # Shared aggregator — keeps nnh in lock-step with the rest of the
     # seedmatic family (nix-darwin-home, rke2lab): nixpkgs + everything else we
     # borrow (flox, sops-nix, nixos-generators, disko, …) flow from here rather
     # than pinning our own. We only wire `follows` for the inputs we actually
@@ -10,8 +10,8 @@
     flake-commons.url = "github:seedmatic/nix-flake-commons/develop";
     nixpkgs.follows = "flake-commons/nixpkgs";
 
-    # Akvorado is flowlab-specific — referenced DIRECTLY here, deliberately NOT
-    # pushed up into flake-commons: flowlab is the only project that consumes it.
+    # Akvorado is nnh-specific — referenced DIRECTLY here, deliberately NOT
+    # pushed up into flake-commons: nnh is the only project that consumes it.
     # The upstream flake ships the ready-built backend (Go binary with the pnpm
     # console embedded) as `packages.<system>.backend`, so we do no packaging —
     # only a `services.akvorado` module (see modules/akvorado.nix). Pinned to the
@@ -57,7 +57,7 @@
 
       probePkgs = nixpkgs.legacyPackages.${probeSystem};
 
-      # ── Probe (migrated from ndh; flowlab owns it now) ──────────────────────
+      # ── Probe (migrated from ndh; nnh owns it now) ──────────────────────
       probe = probePkgs.callPackage ./pkgs/nnh-probe.nix { };
 
       # Deploy: push the (small) closure to the vz host over ssh, then render +
@@ -98,7 +98,7 @@
       # A plain nixosSystem importing nixpkgs' lxc-container profile. The build
       # products are `config.system.build.{squashfs,metadata}`, imported into the
       # nikopol-nixos Incus daemon with:
-      #   incus image import <metadata>/tarball/*.tar.xz <squashfs> --alias flowlab/collector
+      #   incus image import <metadata>/tarball/*.tar.xz <squashfs> --alias nnh/collector
       # (Building the aarch64-linux image needs a linux builder.)
       # Attribution data from ndh's catalog — the SINGLE source of truth for
       # "your side" naming, consumed as pure data (no darwin build realized):
@@ -106,7 +106,7 @@
       #   asns     : {"<asn>" = name}   → the canonical AS-name dictionary
       #   hosts    : name→{ip,mac,kind} → per-host /32 NetNames (daily-drivers +
       #              rke2 nodes projected from rke2lab)
-      # This replaces flowlab's former hardcoded selfBase/gatewayNetworks/asns.
+      # This replaces nnh's former hardcoded selfBase/gatewayNetworks/asns.
       # nnh keeps `ndh` as a flake input and consumes it LIVE at eval; the mutual
       # dependency (ndh unioning nnh's blueprint) is broken with reciprocal
       # `inputs.<other>.inputs.<self>.follows = ""` — added in lock-step with ndh
@@ -193,7 +193,7 @@
       # container. Persistent volumes differ by role.
       mkProfile =
         { description, ipv4Address, extraDevices }:
-        (probePkgs.formats.yaml { }).generate "flowlab-profile.yaml" {
+        (probePkgs.formats.yaml { }).generate "nnh-profile.yaml" {
           config."security.nesting" = "true";
           inherit description;
           devices = {
@@ -217,7 +217,7 @@
       # all of it is reconstructible (orchestrator config is baked in nix, Kafka is a
       # ≤1-day buffer that's ephemeral BY DESIGN). Nothing here needs to survive a rebuild.
       inletProfileYaml = mkProfile {
-        description = "flowlab nnh-inlet (ingest edge + brain)";
+        description = "nnh-inlet (ingest edge + brain)";
         # Top of the static range: the top /30 of bare-br's /25 is 172.16.6.124/30
         # (usable .125/.126); the inlet takes .126, the outlet .125.
         ipv4Address = "172.16.6.126";
@@ -231,7 +231,7 @@
       # /var/lib/akvorado sat on the ephemeral rootfs and every rebuild re-fetched
       # GeoIP from scratch, hammering the free tier into HTTP 429.
       outletProfileYaml = mkProfile {
-        description = "flowlab nnh-outlet (store)";
+        description = "nnh-outlet (store)";
         ipv4Address = "172.16.6.125"; # top /30 (172.16.6.124/30), paired with inlet .126
         extraDevices = {
           data = {

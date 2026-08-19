@@ -13,7 +13,7 @@ The proven Akvorado config was extracted 2026-08-15 from the disposable podman P
 `v2026.8.0-18-g8a8ba9fe`). It is an **untracked/uncommitted** clone (fragile). The PoC deltas vs
 upstream: `config/outlet.yaml`, `config/console.yaml`, `.env` (modified) + `override-net.yml`
 (added, podman-only — irrelevant to native). This memory preserves the essentials so
-`modules/akvorado.nix` can render them natively. (flowlab's flake pins akvorado at rev `767ee0f` —
+`modules/akvorado.nix` can render them natively. (nnh's flake pins akvorado at rev `767ee0f` —
 reconcile the schema with v2026.8.0.)
 
 **4-process model** (orchestrator serves config over HTTP; the others fetch it and run their own
@@ -76,4 +76,4 @@ HTTP for metrics/UI). Docker commands → native ExecStart:
   (free, no key) → gunzip. See CLAUDE.md enrichment learning. Read downloads by **Src AS**.
 
 Inlet binds :2055 on 172.16.6.2 — see [[probe-collector-transport]]. Backends are reused nixpkgs
-services (clickhouse/kafka-KRaft/redis) — see [[incus-project-flowlab]].
+services (clickhouse/kafka-KRaft/redis) — see [[incus-project-nnh]].

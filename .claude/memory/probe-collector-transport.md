@@ -42,13 +42,13 @@ nikopol's rke2lab netplan — it uses only `10.80.0.0/20` (vmnet segments) + `19
 `172.16.x` is used by neither, and a phone hotspot almost never hands out `172.16.x`, so collision
 risk is negligible. (rke2's internal k8s CIDRs 10.42/10.43 are cluster-internal, not on this L2.)
 
-**Both ends stay INSIDE flowlab (no nix-darwin-home dependency):**
-- collector side = flowlab's NixOS image (static `10.66.6.2/30` on lan0 + inlet bind).
+**Both ends stay INSIDE nnh (no nix-darwin-home dependency):**
+- collector side = nnh's NixOS image (static `10.66.6.2/30` on lan0 + inlet bind).
 - `vz` side = folded into the **probe bundle** — a root LaunchDaemon adds the en0 alias
   `10.66.6.1/30` and re-applies it on Wi-Fi re-association (macOS may flush aliases on reassoc).
 
 **Why:** stable export target without tailnet/VPN + isolation of telemetry from the measured
 uplink. **How to apply:** TRANSPORT only — `pmacctd` still captures `en0` for the measurement
-(see [[probe-belongs-to-flowlab]]). Incus project design + reuse of vmnet-br/lan-br: see
-[[incus-project-flowlab]]. The user's "VLAN" = this machine-local host↔VM link, not 802.1Q
+(see [[probe-belongs-to-nnh]]). Incus project design + reuse of vmnet-br/lan-br: see
+[[incus-project-nnh]]. The user's "VLAN" = this machine-local host↔VM link, not 802.1Q
 (impossible over a carrier hotspot).

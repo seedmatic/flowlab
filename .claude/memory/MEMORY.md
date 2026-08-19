@@ -1,8 +1,9 @@
 # nnh — project memory
 
-**Naming:** the repo/project is referenced as **`nnh`** (github:seedmatic/nnh), NOT
-"flowlab". Some code strings still say "flowlab" (flake `description`, the `flowlab
-nnh-*` profile descriptions, the docs title) — cosmetic cleanup pending.
+**Naming:** the repo/project is **`nnh`** (github:seedmatic/nnh) — formerly "flowlab".
+Code, docs and these memory files are all renamed (main `b3a6c3a`). Still carrying the
+old name, on purpose or pending: the `flowlab.d/` worktree-container FS path (intentional)
+and the hub note `[[hub:flake-mutual-dependency-follows-root]]` (needs a hub-sync).
 
 Auto-loaded index of nnh-specific working memory (cross-cutting facts live in the
 hub, `.claude/hub/memory/`, via `[[hub:name]]`). See `CLAUDE.md` for the architecture and
@@ -54,14 +55,14 @@ enricher gates, macOS pcap direction, ASN/GeoIP enrichment).
   nnh static /30 `172.16.6.124/30` pinned via Incus `ipv4.address`) + the IP-churn incident. **Key hardening.**
 - [probe-collector-transport](probe-collector-transport.md) — probe↔collector export rides a
   static /30 (172.16.6.1/2) on the shared Wi-Fi L2 (one-NIC-bridged constraint), not hotspot DHCP.
-- [incus-project-flowlab](incus-project-flowlab.md) — flowlab runs in its own Incus project on
+- [incus-project-nnh](incus-project-nnh.md) — nnh runs in its own Incus project on
   nikopol-nixos, reusing default's bridges, without mutating rke2lab resources.
 - [akvorado-proven-config](akvorado-proven-config.md) — the proven PoC Akvorado config (from the
   podman clone) + native-systemd porting deltas; source of truth for modules/akvorado.nix.
 - [pcap-capture-direction-macos](pcap-capture-direction-macos.md) — macOS probe is inbound-only
   (uploads lost); root cause + the two-part fix (no-direction map + akvorado enricher.go patch). NEXT.
-- [build-reuse-decisions](build-reuse-decisions.md) — migrate the probe into flowlab; flox-ref
+- [build-reuse-decisions](build-reuse-decisions.md) — migrate the probe into nnh; flox-ref
   rke2lab's `incus-client`; shared `~/.config/incus` remote; Incus image built directly via nix
   (lxc-container.nix, no distrobuilder / no nixos-generators).
-- [probe-belongs-to-flowlab](probe-belongs-to-flowlab.md) — the pmacct nfprobe bundle is
-  flowlab-owned; the load-bearing macOS details (two-entry interfaces.map, sampling_rate 1, etc.).
+- [probe-belongs-to-nnh](probe-belongs-to-nnh.md) — the pmacct nfprobe bundle is
+  nnh-owned; the load-bearing macOS details (two-entry interfaces.map, sampling_rate 1, etc.).

@@ -19,7 +19,7 @@ corrected. History below kept for the root cause.
 **MAJOR finding (2026-08-15), corrected a false CLAUDE.md learning.** The probe on `vz` captured
 **INBOUND only** (downloads); **OUTBOUND (uploads) was NOT captured**. The CLAUDE.md claim that the
 two-entry `interfaces.map` gives "complete" capture was WRONG — it was inbound-only. Validated
-exhaustively (see [[probe-belongs-to-flowlab]]).
+exhaustively (see [[probe-belongs-to-nnh]]).
 
 **Root cause (macOS + pmacct 1.7.9 + Akvorado):**
 - `interfaces.map` `direction=out` → pmacct calls `pcap_setdirection(PCAP_D_OUT)` → macOS: *"Setting

@@ -1,6 +1,6 @@
 ---
 name: asn-network-labeling
-description: "How flowlab labels \"your side\" — private ASes (home/rke2-cluster/gateway) + per-host names from ndh's catalog; geoip 10/day download cap"
+description: "How nnh labels \"your side\" — private ASes (home/rke2-cluster/gateway) + per-host names from ndh's catalog; geoip 10/day download cap"
 metadata: 
   node_type: memory
   type: project
@@ -53,6 +53,6 @@ VALIDATED live (2026-08-15): `192.168.1.1(vz)→internet` = SrcAS 65000 / SrcNet
 **TODO — consolidate the network blueprint (rke2lab session):** the `selfBase` CIDR list + the
 segment→ASN mapping should be a SINGLE source of truth in rke2lab's blueprint (extended with
 segments + ASN assignments + pod/service CIDRs + the daily-drivers/home devices), projected by ndh
-AND flowlab. The current hardcode is the transitional bridge. Full brief + the mDNS/Bbox-DNS LAN
+AND nnh. The current hardcode is the transitional bridge. Full brief + the mDNS/Bbox-DNS LAN
 inventory (vz=.1 nikopol-vzhost, zecoute .5, huematic .6, iPad/iPhone/Pixel…) are in the non-git
 `flowlab.d/blueprint-consolidation.handoff`. See [[pcap-capture-direction-macos]] for the probe side.

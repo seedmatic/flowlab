@@ -1,6 +1,6 @@
 ---
-name: probe-belongs-to-flowlab
-description: The netflow-probe (pmacct nfprobe bundle) is owned by flowlab; the load-bearing macOS details
+name: probe-belongs-to-nnh
+description: The netflow-probe (pmacct nfprobe bundle) is owned by nnh; the load-bearing macOS details
 metadata: 
   node_type: memory
   type: project
@@ -9,7 +9,7 @@ metadata:
 ---
 
 The `netflow-probe` (pmacct `pmacctd` + `nfprobe` plugin, packaged as a nix bundle + root
-LaunchDaemon installer for the bare-metal `vz` Mac host) **belongs to flowlab**, not ndh. It
+LaunchDaemon installer for the bare-metal `vz` Mac host) **belongs to nnh**, not ndh. It
 was prototyped on ndh `feature/netflow-monitoring` and migrated verbatim into `pkgs/netflow-probe*`.
 See [[build-reuse-decisions]].
 

@@ -41,11 +41,12 @@ enricher gates, macOS pcap direction, ASN/GeoIP enrichment).
   instances and broke the pipeline twice (akvorado name-advertised Kafka wedged + probe on stale IP).
   Now inlet=172.16.6.126 / outlet=172.16.6.125, pinned via Incus `ipv4.address`, out of ndh's new
   dynamic `/27` pool. This is the day's key hardening.
-- **flake.lock is bloated (~12k nodes) and it's UPSTREAM, not fixable from nnh** — consuming
-  `ndh.catalog` transitively locks rke2lab's un-deduped input tree (devenv/cachix/home-manager × many
-  nixpkgs). `follows` from nnh is one-level and can't reach it (and the catalog needs rke2lab). Do NOT
-  add a brittle per-input `follows` list here (tried: −8 nodes, useless). Fix = dedup upstream in
-  rke2lab/ndh (`inputs.<heavy>.inputs.nixpkgs.follows`). Accept for now.
+- **flake.lock is bloated (~12k nodes) — root cause = flake-commons, DEFERRED fix** — the whole
+  family (nnh/ndh/rke2lab locks ~identical) inherits ~1990 duplicate nixpkgs from the shared
+  aggregator `flake-commons` (13 of its 28 inputs keep their own nixpkgs). ndh/rke2lab are ALREADY
+  clean (they follow flake-commons); a downstream `follows` from nnh is useless (tried: −8 nodes). The
+  fix belongs in flake-commons and is DEFERRED (nothing broken; hygiene only) — full recipe + the
+  flox/nix/determinate exclusions in [flake-commons-lock-dedup](flake-commons-lock-dedup.md).
 
 ## Design decisions
 

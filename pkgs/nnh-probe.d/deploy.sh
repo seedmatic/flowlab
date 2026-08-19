@@ -3,10 +3,10 @@
 # pkgs.replaceVars from flake.nix (token @bundle@ = the nnh-probe closure).
 #
 # A push needs no reverse connection, so it works from any operator wherever
-# `ssh <vz-host>` resolves. Default vz host: vz.nikopol.
+# `ssh <vz-host>` resolves. Default vz host: vzhost.nikopol.
 set -euxo pipefail
 
-vz_host="vz.nikopol"
+vz_host="vzhost.nikopol"
 # A leading non-flag arg WITHOUT a colon is the vz host; an arg WITH a colon
 # (host:port) is the collector.
 if (($# > 0)) && [[ "$1" != --* && "$1" != *:* ]]; then

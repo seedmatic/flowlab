@@ -222,7 +222,7 @@ addressed *by name* — no static IPs.
 ....
 flowchart LR
   PROBE["pmacctd on vz\n(/etc/resolver/nikopol → 172.16.6.1)"]:::wl
-  VZ["vz.nikopol en0 alias\n172.16.6.253/30 (ndh baremetal-link)"]:::ext
+  VZ["vzhost.nikopol en0 alias\n172.16.6.253/30 (ndh baremetal-link)"]:::ext
   SR["nikopol-nixos\nsubnet router (.254, ip_forward)"]:::infra
   BR["bare-br dnsmasq/gateway\n172.16.6.1/25, .nikopol zone"]:::infra
   I["nnh-inlet.nikopol\n(DHCP)"]:::wl

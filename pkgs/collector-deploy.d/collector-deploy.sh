@@ -17,7 +17,7 @@
 set -euxo pipefail
 
 remote="${1:-nikopol-nixos}"
-vz_host="${2:-vz.nikopol}"
+vz_host="${2:-vzhost.nikopol}"
 project=nnh
 pool=default
 # The probe exports to the inlet BY NAME (resolved via the bare-br .nikopol zone /

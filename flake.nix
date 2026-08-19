@@ -26,13 +26,22 @@
     # ndh (nix-darwin-home) is the resolved source of truth for the home-LAN host
     # inventory: its catalog PROJECTS rke2lab's cluster blueprint AND adds the
     # daily-driver reservations, so `ndh.catalog.netplan.lan.hosts` is the complete
-    # name→IP map (rke2lab alone only carries the cluster nodes). We consume ONLY
-    # that one pure-data attr to label our own side with per-host names in the flow
-    # console — no darwin build is realized. Deliberately NOT routed through
-    # flake-commons and NOT `follows`-ed onto our nixpkgs: we only read static data,
-    # so a second input tree in the lock is harmless and following would risk
-    # breaking ndh's own eval.
-    ndh.url = "github:seedmatic/ndh/develop";
+    # name→IP map (rke2lab alone only carries the cluster nodes). We consume its
+    # catalog to label our own side with per-host names in the flow console — no
+    # darwin build is realized.
+    #
+    # This is a MUTUAL (federated) dependency: nnh reads ndh's catalog while ndh
+    # reads nnh's `lib.networkBlueprint` (its own `nnh` input). That cycle is broken
+    # with `inputs.nnh.follows = ""` — an empty follows resolves to the ROOT flake
+    # (this one), a fixpoint that terminates the recursion (see the hub memory
+    # flake-mutual-dependency-follows-root). `inputs.flake-commons.follows` dedupes the
+    # shared aggregator so ndh and nnh resolve the SAME nixpkgs/flox/… tree instead of
+    # locking a second copy.
+    ndh = {
+      url = "github:seedmatic/ndh/develop";
+      inputs.nnh.follows = "";
+      inputs.flake-commons.follows = "flake-commons";
+    };
   };
 
   outputs =
@@ -54,7 +63,7 @@
       # Deploy: push the (small) closure to the vz host over ssh, then render +
       # load the root LaunchDaemon via sudo. A push needs no reverse connection,
       # so it works from any operator wherever `ssh <vz-host>` resolves.
-      # Default vz host: vz.nikopol.
+      # Default vz host: vzhost.nikopol.
       probeDeploy = probePkgs.writeShellApplication {
         # Binary lands in PATH (nix profile / devshell) → keep the disambiguating
         # nnh- prefix; `probe-deploy` alone is too generic. (The nix let-binding
@@ -131,32 +140,32 @@
       outletSystem = mkCollectorSystem ./hosts/outlet.nix;
 
       # What nnh CONTRIBUTES back to ndh's catalog (the "publish" side of the
-      # federation): the two collector instances it deploys into nikopol's bare-br
-      # segment, so the catalog knows they exist. Names only — addresses are
-      # resolved dynamically (bare-br .nikopol DNS / mDNS), so `ip = null` (the
-      # catalog's Java-side Optional<Address> → JSON null); ndh assigns/reserves.
-      # The {cidr,name,asn} of the enclosing segment mirror ndh's own
-      # nikopol-baremetal-net so the union can attach the hosts by CIDR — restated
-      # (not read back from the catalog) ON PURPOSE: the blueprint MUST stay
-      # self-contained, else nnh's contribution would depend on ndh's catalog which
-      # depends on nnh's contribution — a real value cycle. ndh unions this in and
-      # the mutual flake dependency is broken with reciprocal
-      # `inputs.<other>.inputs.<self>.follows = ""`, wired in lock-step with ndh
-      # (see the hub memory flake-mutual-dependency-follows-root).
+      # federation). OWNERSHIP boundary: ndh owns the bare /25 AND its carve
+      # (dynamic-low 172.16.6.0/27 + static-high); nnh owns exactly ONE static
+      # sub-segment inside it — the top /30, 172.16.6.124/30 (usable .125/.126) —
+      # which it pins (see mkProfile's ipv4.address) and declares here. nnh publishes
+      # ONLY what it owns: this /30 and its two hosts, NOT the enclosing /25 (ndh's).
+      # ndh unions this segment in; akvorado's most-specific-prefix match makes the
+      # /30 win over ndh's /25 for .124-.127. Self-contained BY DESIGN (it declares
+      # only nnh's own /30 and never reads ndh's catalog) — else nnh's contribution
+      # would depend on ndh's which depends on nnh's, a real value cycle. The mutual
+      # flake dependency is broken with reciprocal
+      # `inputs.<other>.inputs.<self>.follows = ""` (see the hub memory
+      # flake-mutual-dependency-follows-root).
       networkBlueprint = {
         segments = [
           {
-            cidr = "172.16.6.0/25";
-            name = "nikopol-baremetal-net";
+            cidr = "172.16.6.124/30";
+            name = "nnh-collector";
             asn = 65000;
             hosts = [
               {
                 name = "nnh-inlet";
-                ip = null;
+                ip = "172.16.6.126";
               }
               {
                 name = "nnh-outlet";
-                ip = null;
+                ip = "172.16.6.125";
               }
             ];
           }
@@ -173,11 +182,17 @@
 
       # Incus profiles, generated from Nix (a heredoc would break on `''` stripping).
       # Single NIC lan0 bridged to `bare-br` — nikopol's ndh-provisioned segment
-      # (DHCP + .nikopol dnsmasq zone + the /24 advertised into the tailnet).
+      # (.nikopol dnsmasq zone + the /24 advertised into the tailnet).
+      # `ipv4.address` PINS a STATIC lease: bare-br's /25 is carved dynamic-low
+      # (172.16.6.0/27, ndh's dhcp.ranges) / static-high, and the collector takes the
+      # top of the static range. This stops a bare-br recreate from re-shuffling the
+      # instance IPs — which had wedged akvorado's Kafka clients (advertised by name)
+      # and left the probe exporting to a stale IP. Incus records the reservation in
+      # bare-br's dnsmasq, and `dns.mode=dynamic` still maps nnh-*.nikopol → the pin.
       # security.nesting eases NixOS's nested systemd mounts in an unprivileged
       # container. Persistent volumes differ by role.
       mkProfile =
-        { description, extraDevices }:
+        { description, ipv4Address, extraDevices }:
         (probePkgs.formats.yaml { }).generate "flowlab-profile.yaml" {
           config."security.nesting" = "true";
           inherit description;
@@ -192,6 +207,7 @@
               nictype = "bridged";
               parent = "bare-br";
               name = "lan0";
+              "ipv4.address" = ipv4Address;
             };
           }
           // extraDevices;
@@ -202,6 +218,9 @@
       # ≤1-day buffer that's ephemeral BY DESIGN). Nothing here needs to survive a rebuild.
       inletProfileYaml = mkProfile {
         description = "flowlab nnh-inlet (ingest edge + brain)";
+        # Top of the static range: the top /30 of bare-br's /25 is 172.16.6.124/30
+        # (usable .125/.126); the inlet takes .126, the outlet .125.
+        ipv4Address = "172.16.6.126";
         extraDevices = { };
       };
 
@@ -213,6 +232,7 @@
       # GeoIP from scratch, hammering the free tier into HTTP 429.
       outletProfileYaml = mkProfile {
         description = "flowlab nnh-outlet (store)";
+        ipv4Address = "172.16.6.125"; # top /30 (172.16.6.124/30), paired with inlet .126
         extraDevices = {
           data = {
             type = "disk";

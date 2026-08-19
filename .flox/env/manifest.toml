@@ -19,7 +19,7 @@ schema-version = "1.10.0"
 ## A `.flake` reference to the GitHub repo (not `path:.`) keeps manifest.lock
 ## portable (a commit SHA, not a dev-machine absolute path). Bump with
 ## `flox upgrade` / `flox update`.
-incus-client.flake = "github:nxmatic/rke2lab#incus-client"
+incus-client.flake = "github:seedmatic/rke2lab#incus-client"
 gnutar.pkg-path = "gnutar"
 xz.pkg-path = "xz"
 

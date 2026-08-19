@@ -1,6 +1,10 @@
-# flowlab — project memory
+# nnh — project memory
 
-Auto-loaded index of flowlab-specific working memory (cross-cutting facts live in the
+**Naming:** the repo/project is referenced as **`nnh`** (github:seedmatic/nnh), NOT
+"flowlab". Some code strings still say "flowlab" (flake `description`, the `flowlab
+nnh-*` profile descriptions, the docs title) — cosmetic cleanup pending.
+
+Auto-loaded index of nnh-specific working memory (cross-cutting facts live in the
 hub, `.claude/hub/memory/`, via `[[hub:name]]`). See `CLAUDE.md` for the architecture and
 the hard-won learnings (pmacct/Akvorado, the netavark-UDP pivot to NixOS-native, the
 enricher gates, macOS pcap direction, ASN/GeoIP enrichment).
@@ -25,16 +29,28 @@ enricher gates, macOS pcap direction, ASN/GeoIP enrichment).
   why pktap + forking akvorado were rejected). Separate open item: `nc`/python bulk vz↔bioskop
   stalls ~146 KB (Wi-Fi/bridge path), irrelevant to hotspot-uplink accounting.
 
-- **ASN/NetName labeling — DEPLOYED (labels), geoip PENDING** — "your side" is now named:
-  private ASes `65000 home` / `65010 rke2-cluster` / `65020 gateway` (reuses rke2lab's Cilium BGP
-  numbering) + per-host NetNames from `ndh.catalog` (flake input `ndh`). See
-  [asn-network-labeling](asn-network-labeling.md). **Next: deploy the geoip-persistence changes**
-  (2nd volume + idempotent fetch) after the IPinfo 10/day download quota resets (00:00 UTC), so
-  internet dests resolve real ASes instead of `DstAS 0`. Then the rke2lab **blueprint consolidation**
-  (single source of truth for segment→ASN; flowlab's hardcoded `selfBase` is the bridge).
+- **ASN/NetName labeling + GeoIP — DEPLOYED & VERIFIED (2026-08-19)** — "your side" named from
+  `ndh.catalog` (private ASes `65000 home` / `65010 rke2-cluster` / `65020 gateway` + per-host
+  NetNames, incl. cross-segment like `vzhost.bioskop`). GeoIP now WORKS (bare-br egress fixed → the
+  `akvorado-geoip` fetch lands asn+City mmdbs, idempotent "present and fresh" skip): internet dests
+  resolve real ASes (Amazon 14618, Cloudflare 13335, GitHub 36459, Bouygues 5410). See
+  [asn-network-labeling](asn-network-labeling.md). Reading the flows: console default = Outbound,
+  `Src NetName → Dst AS` (see docs/architecture.adoc "Reading the flows").
+- **Instance IPs are PINNED (static /30) — do NOT let them go DHCP** — see
+  [bare-br-addressing-pin](bare-br-addressing-pin.md). An ndh bare-br recreate churned the unpinned
+  instances and broke the pipeline twice (akvorado name-advertised Kafka wedged + probe on stale IP).
+  Now inlet=172.16.6.126 / outlet=172.16.6.125, pinned via Incus `ipv4.address`, out of ndh's new
+  dynamic `/27` pool. This is the day's key hardening.
+- **flake.lock is bloated (~12k nodes) and it's UPSTREAM, not fixable from nnh** — consuming
+  `ndh.catalog` transitively locks rke2lab's un-deduped input tree (devenv/cachix/home-manager × many
+  nixpkgs). `follows` from nnh is one-level and can't reach it (and the catalog needs rke2lab). Do NOT
+  add a brittle per-input `follows` list here (tried: −8 nodes, useless). Fix = dedup upstream in
+  rke2lab/ndh (`inputs.<heavy>.inputs.nixpkgs.follows`). Accept for now.
 
 ## Design decisions
 
+- [bare-br-addressing-pin](bare-br-addressing-pin.md) — bare-br /25 carve (ndh dynamic-low /27 /
+  nnh static /30 `172.16.6.124/30` pinned via Incus `ipv4.address`) + the IP-churn incident. **Key hardening.**
 - [probe-collector-transport](probe-collector-transport.md) — probe↔collector export rides a
   static /30 (172.16.6.1/2) on the shared Wi-Fi L2 (one-NIC-bridged constraint), not hotspot DHCP.
 - [incus-project-flowlab](incus-project-flowlab.md) — flowlab runs in its own Incus project on
